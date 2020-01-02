@@ -1,0 +1,13 @@
+{
+  "dbpath" : "db",
+  "repos" : {
+     "Local" : {
+        "url" : "/Users/conanhu/Desktop/goprojects/src/hound/api/"
+      },
+    "Git" : {
+      "url" : "https://github.com/conan25216/tcf.git",
+      "exclude-dot-files": true,
+      "exclude-files":["README.md","mytest.go"]
+    }
+  }
+}

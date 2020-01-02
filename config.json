@@ -1,0 +1,13 @@
+{
+  "dbpath" : "db",
+  "repos" : {
+      "search-hound" : {
+          "url" : "https://github.com/conan25216/hound.git",
+          "exclude-dot-files": true,
+    },
+      "Test" : {
+          "url" : "/Users/conanhu/Desktop/goprojects/src/tcf/"
+          "exclude-dot-files": true,
+    },
+  }
+}
