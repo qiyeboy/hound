@@ -34,7 +34,7 @@ type nstate struct {
 }
 
 // The flags record state about a position between bytes in the text.
-type flags uint32
+type flags uint64
 
 const (
 	flagBOL  flags = 1 << iota // beginning of line
@@ -60,7 +60,7 @@ func (z *nstate) String() string {
 func (z *nstate) enc() string {
 	var buf []byte
 	var v [10]byte
-	last := ^uint32(0)
+	last := ^uint64(0)
 	n := binary.PutUvarint(v[:], uint64(z.partial))
 	buf = append(buf, v[:n]...)
 	n = binary.PutUvarint(v[:], uint64(z.flag))
@@ -72,9 +72,9 @@ func (z *nstate) enc() string {
 	}
 	sort.Ints(ids)
 	for _, id := range ids {
-		n := binary.PutUvarint(v[:], uint64(uint32(id)-last))
+		n := binary.PutUvarint(v[:], uint64(uint64(id)-last))
 		buf = append(buf, v[:n]...)
-		last = uint32(id)
+		last = uint64(id)
 	}
 	return string(buf)
 }
@@ -95,14 +95,14 @@ func (z *nstate) dec(s string) {
 	b = b[n:]
 	z.flag = flags(i)
 	z.q.Reset()
-	last := ^uint32(0)
+	last := ^uint64(0)
 	for len(b) > 0 {
 		i, n = binary.Uvarint(b)
 		if n <= 0 {
 			bug()
 		}
 		b = b[n:]
-		last += uint32(i)
+		last += uint64(i)
 		z.q.Add(last)
 	}
 }
@@ -129,15 +129,15 @@ func (m *matcher) init(prog *syntax.Prog) error {
 	m.prog = prog
 	m.dstate = make(map[string]*dstate)
 
-	m.z1.q.Init(uint32(len(prog.Inst)))
-	m.z2.q.Init(uint32(len(prog.Inst)))
+	m.z1.q.Init(uint64(len(prog.Inst)))
+	m.z2.q.Init(uint64(len(prog.Inst)))
 
-	m.addq(&m.z1.q, uint32(prog.Start), syntax.EmptyBeginLine|syntax.EmptyBeginText)
+	m.addq(&m.z1.q, uint64(prog.Start), syntax.EmptyBeginLine|syntax.EmptyBeginText)
 	m.z1.flag = flagBOL | flagBOT
 	m.start = m.cache(&m.z1)
 
 	m.z1.q.Reset()
-	m.addq(&m.z1.q, uint32(prog.Start), syntax.EmptyBeginLine)
+	m.addq(&m.z1.q, uint64(prog.Start), syntax.EmptyBeginLine)
 	m.z1.flag = flagBOL
 	m.startLine = m.cache(&m.z1)
 
@@ -157,7 +157,7 @@ func (m *matcher) stepEmpty(runq, nextq *sparse.Set, flag syntax.EmptyOp) {
 // c is either an input byte or endText.
 func (m *matcher) stepByte(runq, nextq *sparse.Set, c int, flag syntax.EmptyOp) (match bool) {
 	nextq.Reset()
-	m.addq(nextq, uint32(m.prog.Start), flag)
+	m.addq(nextq, uint64(m.prog.Start), flag)
 	for _, id := range runq.Dense() {
 		i := &m.prog.Inst[id]
 		switch i.Op {
@@ -185,7 +185,7 @@ func (m *matcher) stepByte(runq, nextq *sparse.Set, c int, flag syntax.EmptyOp) 
 }
 
 // addq adds id to the queue, expanding according to flag.
-func (m *matcher) addq(q *sparse.Set, id uint32, flag syntax.EmptyOp) {
+func (m *matcher) addq(q *sparse.Set, id uint64, flag syntax.EmptyOp) {
 	if q.Has(id) {
 		return
 	}
@@ -278,14 +278,14 @@ func (m *matcher) cache(z *nstate) *dstate {
 }
 
 func (m *matcher) match(b []byte, beginText, endText bool) (end int) {
-	//	fmt.Printf("%v\n", m.prog)
+	//	//fmt.Printf("%v\n", m.prog)
 
 	d := m.startLine
 	if beginText {
 		d = m.start
 	}
 	//	m.z1.dec(d.enc)
-	//	fmt.Printf("%v (%v)\n", &m.z1, d==&dmatch)
+	//	//fmt.Printf("%v (%v)\n", &m.z1, d==&dmatch)
 	for i, c := range b {
 		d1 := d.next[c]
 		if d1 == nil {
@@ -301,7 +301,7 @@ func (m *matcher) match(b []byte, beginText, endText bool) (end int) {
 		}
 		d = d1
 		//		m.z1.dec(d.enc)
-		//		fmt.Printf("%#U: %v (%v, %v, %v)\n", c, &m.z1, d==&dmatch, d.matchNL, d.matchEOT)
+		//		//fmt.Printf("%#U: %v (%v, %v, %v)\n", c, &m.z1, d==&dmatch, d.matchNL, d.matchEOT)
 	}
 	if d.matchNL || endText && d.matchEOT {
 		return len(b)

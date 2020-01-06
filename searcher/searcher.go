@@ -299,12 +299,10 @@ func MakeAll(cfg *config.Config) (map[string]*Searcher, map[string]error, error)
 	searchers := map[string]*Searcher{}
 
 	refs, err := findExistingRefs(cfg.DbPath)
-	// fmt.Printf("MakeAll refs %+v\n", refs) // conan add
 
 	if err != nil {
 		return nil, nil, err
 	}
-	// fmt.Printf("MakeAll cfg.MaxConcurrentIndexers is %+v\n", cfg.MaxConcurrentIndexers) // conan add
 	lim := makeLimiter(cfg.MaxConcurrentIndexers)
 
 	n := len(cfg.Repos)
@@ -313,7 +311,6 @@ func MakeAll(cfg *config.Config) (map[string]*Searcher, map[string]error, error)
 
 	// Start new searchers for all repos in different go routines while
 	// respecting cfg.MaxConcurrentIndexers.
-	// fmt.Printf("cfg %+v", cfg)          // conan add
 	for name, repo := range cfg.Repos { //search come with index together
 		go newSearcherConcurrent(cfg.DbPath, name, repo, refs, lim, resultCh)
 	}
@@ -411,6 +408,7 @@ func updateAndReindex(
 
 // Creates a new Searcher that is capable of re-claiming an existing index directory
 // from a set of existing manifests.
+// conan add a condition for local
 func newSearcher(
 	dbpath, name string,
 	repo *config.Repo,
@@ -428,7 +426,6 @@ func newSearcher(
 	if isRepo == true {
 		vcsDir = filepath.Join(dbpath, vcsDirFor(repo))
 		rev, err = wd.PullOrClone(vcsDir, repo.Url) // 2- 下载代码，存储到vcs目录
-		fmt.Printf("vcsDir is %v\n", vcsDir)
 		if err != nil {
 			return nil, err
 		}
@@ -436,8 +433,7 @@ func newSearcher(
 
 	opt := &index.IndexOptions{
 		ExcludeDotFiles: repo.ExcludeDotFiles,
-		// SpecialFiles:    wd.SpecialFiles(),
-		SpecialFiles: repo.ExcludeFiles,
+		SpecialFiles:    repo.ExcludeFiles,
 	} // 构建搜索index
 
 	var idxDir string
@@ -450,7 +446,6 @@ func newSearcher(
 		idxDir = ref.Dir()
 		refs.claim(ref)
 	}
-	fmt.Printf("idxDir is %+v\n", idxDir)
 
 	//4- build index
 	idx, err := buildAndOpenIndex(
@@ -500,7 +495,6 @@ func newSearcher(
 
 			// attempt to update and reindex this searcher
 			newRev, ok := updateAndReindex(s, dbpath, vcsDir, name, rev, wd, opt, lim)
-			// fmt.Printf("newRev is %+v", newRev) // conan add
 			if !ok {
 				continue
 			}
@@ -532,7 +526,7 @@ func newSearcherConcurrent(
 	// acquire a token from the rate limiter
 	lim.Acquire()
 	defer lim.Release()
-	// fmt.Printf("dbpath is %+v\nrepo is %+v\nrefs is %+v\n", dbpath, repo, refs) // conan add
+
 	s, err := newSearcher(dbpath, name, repo, refs, lim) // build index here
 	if err != nil {
 		resultCh <- searcherResult{

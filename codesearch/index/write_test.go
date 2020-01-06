@@ -89,7 +89,7 @@ func join(s ...string) string {
 	return strings.Join(s, "")
 }
 
-func u32(x uint32) string {
+func u32(x uint64) string {
 	var buf [4]byte
 	buf[0] = byte(x >> 24)
 	buf[1] = byte(x >> 16)
@@ -98,10 +98,10 @@ func u32(x uint32) string {
 	return string(buf[:])
 }
 
-func fileList(list ...uint32) string {
+func fileList(list ...uint64) string {
 	var buf []byte
 
-	last := ^uint32(0)
+	last := ^uint64(0)
 	for _, x := range list {
 		delta := x - last
 		for delta >= 0x80 {

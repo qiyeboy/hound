@@ -82,11 +82,11 @@ const (
 type Index struct {
   Verbose   bool
   data      mmapData
-  pathData  uint32
-  nameData  uint32
-  postData  uint32
-  nameIndex uint32
-  postIndex uint32
+  pathData  uint64
+  nameData  uint64
+  postData  uint64
+  nameIndex uint64
+  postIndex uint64
   numName   int
   numPost   int
 }
@@ -98,13 +98,13 @@ func Open(file string) *Index {
   if len(mm.d) < 4*4+len(trailerMagic) || string(mm.d[len(mm.d)-len(trailerMagic):]) != trailerMagic {
     corrupt(mm.f)
   }
-  n := uint32(len(mm.d) - len(trailerMagic) - 5*4)
+  n := uint64(len(mm.d) - len(trailerMagic) - 5*4)
   ix := &Index{data: mm}
-  ix.pathData = ix.uint32(n)
-  ix.nameData = ix.uint32(n + 4)
-  ix.postData = ix.uint32(n + 8)
-  ix.nameIndex = ix.uint32(n + 12)
-  ix.postIndex = ix.uint32(n + 16)
+  ix.pathData = ix.uint64(n)
+  ix.nameData = ix.uint64(n + 4)
+  ix.postData = ix.uint64(n + 8)
+  ix.nameIndex = ix.uint64(n + 12)
+  ix.postIndex = ix.uint64(n + 16)
   ix.numName = int((ix.postIndex-ix.nameIndex)/4) - 1
   ix.numPost = int((n - ix.postIndex) / postEntrySize)
   return ix
@@ -112,9 +112,9 @@ func Open(file string) *Index {
 
 // slice returns the slice of index data starting at the given byte offset.
 // If n >= 0, the slice must have length at least n and is truncated to length n.
-func (ix *Index) slice(off uint32, n int) []byte {
+func (ix *Index) slice(off uint64, n int) []byte {
   o := int(off)
-  if uint32(o) != off || n >= 0 && o+n > len(ix.data.d) {
+  if uint64(o) != off || n >= 0 && o+n > len(ix.data.d) {
     corrupt(ix.data.f)
   }
   if n < 0 {
@@ -123,9 +123,9 @@ func (ix *Index) slice(off uint32, n int) []byte {
   return ix.data.d[o : o+n]
 }
 
-// uint32 returns the uint32 value at the given offset in the index data.
-func (ix *Index) uint32(off uint32) uint32 {
-  return binary.BigEndian.Uint32(ix.slice(off, 4))
+// uint64 returns the uint64 value at the given offset in the index data.
+func (ix *Index) uint64(off uint64) uint64 {
+  return binary.BigEndian.uint64(ix.slice(off, 4))
 }
 
 func (ix *Index) Close() error {
@@ -133,12 +133,12 @@ func (ix *Index) Close() error {
 }
 
 // uvarint returns the varint value at the given offset in the index data.
-func (ix *Index) uvarint(off uint32) uint32 {
+func (ix *Index) uvarint(off uint64) uint64 {
   v, n := binary.Uvarint(ix.slice(off, -1))
   if n <= 0 {
     corrupt(ix.data.f)
   }
-  return uint32(v)
+  return uint64(v)
 }
 
 // Paths returns the list of indexed paths.
@@ -151,18 +151,18 @@ func (ix *Index) Paths() []string {
       break
     }
     x = append(x, string(s))
-    off += uint32(len(s) + 1)
+    off += uint64(len(s) + 1)
   }
   return x
 }
 
 // NameBytes returns the name corresponding to the given fileid.
-func (ix *Index) NameBytes(fileid uint32) []byte {
-  off := ix.uint32(ix.nameIndex + 4*fileid)
+func (ix *Index) NameBytes(fileid uint64) []byte {
+  off := ix.uint64(ix.nameIndex + 4*fileid)
   return ix.str(ix.nameData + off)
 }
 
-func (ix *Index) str(off uint32) []byte {
+func (ix *Index) str(off uint64) []byte {
   str := ix.slice(off, -1)
   i := bytes.IndexByte(str, '\x00')
   if i < 0 {
@@ -172,16 +172,16 @@ func (ix *Index) str(off uint32) []byte {
 }
 
 // Name returns the name corresponding to the given fileid.
-func (ix *Index) Name(fileid uint32) string {
+func (ix *Index) Name(fileid uint64) string {
   return string(ix.NameBytes(fileid))
 }
 
 // listAt returns the index list entry at the given offset.
-func (ix *Index) listAt(off uint32) (trigram, count, offset uint32) {
+func (ix *Index) listAt(off uint64) (trigram, count, offset uint64) {
   d := ix.slice(ix.postIndex+off, postEntrySize)
-  trigram = uint32(d[0])<<16 | uint32(d[1])<<8 | uint32(d[2])
-  count = binary.BigEndian.Uint32(d[3:])
-  offset = binary.BigEndian.Uint32(d[3+4:])
+  trigram = uint64(d[0])<<16 | uint64(d[1])<<8 | uint64(d[2])
+  count = binary.BigEndian.uint64(d[3:])
+  offset = binary.BigEndian.uint64(d[3+4:])
   return
 }
 
@@ -189,44 +189,44 @@ func (ix *Index) dumpPosting() {
   d := ix.slice(ix.postIndex, postEntrySize*ix.numPost)
   for i := 0; i < ix.numPost; i++ {
     j := i * postEntrySize
-    t := uint32(d[j])<<16 | uint32(d[j+1])<<8 | uint32(d[j+2])
-    count := int(binary.BigEndian.Uint32(d[j+3:]))
-    offset := binary.BigEndian.Uint32(d[j+3+4:])
+    t := uint64(d[j])<<16 | uint64(d[j+1])<<8 | uint64(d[j+2])
+    count := int(binary.BigEndian.uint64(d[j+3:]))
+    offset := binary.BigEndian.uint64(d[j+3+4:])
     log.Printf("%#x: %d at %d", t, count, offset)
   }
 }
 
-func (ix *Index) findList(trigram uint32) (count int, offset uint32) {
+func (ix *Index) findList(trigram uint64) (count int, offset uint64) {
   // binary search
   d := ix.slice(ix.postIndex, postEntrySize*ix.numPost)
   i := sort.Search(ix.numPost, func(i int) bool {
     i *= postEntrySize
-    t := uint32(d[i])<<16 | uint32(d[i+1])<<8 | uint32(d[i+2])
+    t := uint64(d[i])<<16 | uint64(d[i+1])<<8 | uint64(d[i+2])
     return t >= trigram
   })
   if i >= ix.numPost {
     return 0, 0
   }
   i *= postEntrySize
-  t := uint32(d[i])<<16 | uint32(d[i+1])<<8 | uint32(d[i+2])
+  t := uint64(d[i])<<16 | uint64(d[i+1])<<8 | uint64(d[i+2])
   if t != trigram {
     return 0, 0
   }
-  count = int(binary.BigEndian.Uint32(d[i+3:]))
-  offset = binary.BigEndian.Uint32(d[i+3+4:])
+  count = int(binary.BigEndian.uint64(d[i+3:]))
+  offset = binary.BigEndian.uint64(d[i+3+4:])
   return
 }
 
 type postReader struct {
   ix       *Index
   count    int
-  offset   uint32
-  fileid   uint32
+  offset   uint64
+  fileid   uint64
   d        []byte
-  restrict []uint32
+  restrict []uint64
 }
 
-func (r *postReader) init(ix *Index, trigram uint32, restrict []uint32) {
+func (r *postReader) init(ix *Index, trigram uint64, restrict []uint64) {
   count, offset := ix.findList(trigram)
   if count == 0 {
     return
@@ -234,7 +234,7 @@ func (r *postReader) init(ix *Index, trigram uint32, restrict []uint32) {
   r.ix = ix
   r.count = count
   r.offset = offset
-  r.fileid = ^uint32(0)
+  r.fileid = ^uint64(0)
   r.d = ix.slice(ix.postData+offset+3, -1)
   r.restrict = restrict
 }
@@ -247,7 +247,7 @@ func (r *postReader) next() bool {
   for r.count > 0 {
     r.count--
     delta64, n := binary.Uvarint(r.d)
-    delta := uint32(delta64)
+    delta := uint64(delta64)
     if n <= 0 || delta == 0 {
       corrupt(r.ix.data.f)
     }
@@ -269,29 +269,29 @@ func (r *postReader) next() bool {
   if r.d != nil && (len(r.d) == 0 || r.d[0] != 0) {
     corrupt(r.ix.data.f)
   }
-  r.fileid = ^uint32(0)
+  r.fileid = ^uint64(0)
   return false
 }
 
-func (ix *Index) PostingList(trigram uint32) []uint32 {
+func (ix *Index) PostingList(trigram uint64) []uint64 {
   return ix.postingList(trigram, nil)
 }
 
-func (ix *Index) postingList(trigram uint32, restrict []uint32) []uint32 {
+func (ix *Index) postingList(trigram uint64, restrict []uint64) []uint64 {
   var r postReader
   r.init(ix, trigram, restrict)
-  x := make([]uint32, 0, r.max())
+  x := make([]uint64, 0, r.max())
   for r.next() {
     x = append(x, r.fileid)
   }
   return x
 }
 
-func (ix *Index) PostingAnd(list []uint32, trigram uint32) []uint32 {
+func (ix *Index) PostingAnd(list []uint64, trigram uint64) []uint64 {
   return ix.postingAnd(list, trigram, nil)
 }
 
-func (ix *Index) postingAnd(list []uint32, trigram uint32, restrict []uint32) []uint32 {
+func (ix *Index) postingAnd(list []uint64, trigram uint64, restrict []uint64) []uint64 {
   var r postReader
   r.init(ix, trigram, restrict)
   x := list[:0]
@@ -309,14 +309,14 @@ func (ix *Index) postingAnd(list []uint32, trigram uint32, restrict []uint32) []
   return x
 }
 
-func (ix *Index) PostingOr(list []uint32, trigram uint32) []uint32 {
+func (ix *Index) PostingOr(list []uint64, trigram uint64) []uint64 {
   return ix.postingOr(list, trigram, nil)
 }
 
-func (ix *Index) postingOr(list []uint32, trigram uint32, restrict []uint32) []uint32 {
+func (ix *Index) postingOr(list []uint64, trigram uint64, restrict []uint64) []uint64 {
   var r postReader
   r.init(ix, trigram, restrict)
-  x := make([]uint32, 0, len(list)+r.max())
+  x := make([]uint64, 0, len(list)+r.max())
   i := 0
   for r.next() {
     fileid := r.fileid
@@ -333,12 +333,12 @@ func (ix *Index) postingOr(list []uint32, trigram uint32, restrict []uint32) []u
   return x
 }
 
-func (ix *Index) PostingQuery(q *Query) []uint32 {
+func (ix *Index) PostingQuery(q *Query) []uint64 {
   return ix.postingQuery(q, nil)
 }
 
-func (ix *Index) postingQuery(q *Query, restrict []uint32) (ret []uint32) {
-  var list []uint32
+func (ix *Index) postingQuery(q *Query, restrict []uint64) (ret []uint64) {
+  var list []uint64
   switch q.Op {
   case QNone:
     // nothing
@@ -346,14 +346,14 @@ func (ix *Index) postingQuery(q *Query, restrict []uint32) (ret []uint32) {
     if restrict != nil {
       return restrict
     }
-    list = make([]uint32, ix.numName)
+    list = make([]uint64, ix.numName)
     for i := range list {
-      list[i] = uint32(i)
+      list[i] = uint64(i)
     }
     return list
   case QAnd:
     for _, t := range q.Trigram {
-      tri := uint32(t[0])<<16 | uint32(t[1])<<8 | uint32(t[2])
+      tri := uint64(t[0])<<16 | uint64(t[1])<<8 | uint64(t[2])
       if list == nil {
         list = ix.postingList(tri, restrict)
       } else {
@@ -374,7 +374,7 @@ func (ix *Index) postingQuery(q *Query, restrict []uint32) (ret []uint32) {
     }
   case QOr:
     for _, t := range q.Trigram {
-      tri := uint32(t[0])<<16 | uint32(t[1])<<8 | uint32(t[2])
+      tri := uint64(t[0])<<16 | uint64(t[1])<<8 | uint64(t[2])
       if list == nil {
         list = ix.postingList(tri, restrict)
       } else {
@@ -389,8 +389,8 @@ func (ix *Index) postingQuery(q *Query, restrict []uint32) (ret []uint32) {
   return list
 }
 
-func mergeOr(l1, l2 []uint32) []uint32 {
-  var l []uint32
+func mergeOr(l1, l2 []uint64) []uint64 {
+  var l []uint64
   i := 0
   j := 0
   for i < len(l1) || j < len(l2) {

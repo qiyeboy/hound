@@ -12,13 +12,13 @@ import (
 )
 
 var nstateTests = []struct {
-	q       []uint32
+	q       []uint64
 	partial rune
 }{
-	{[]uint32{1, 2, 3}, 1},
-	{[]uint32{1}, 1},
-	{[]uint32{}, 0},
-	{[]uint32{1, 2, 8}, 0x10FFF},
+	{[]uint64{1, 2, 3}, 1},
+	{[]uint64{1}, 1},
+	{[]uint64{}, 0},
+	{[]uint64{1, 2, 8}, 0x10FFF},
 }
 
 func TestNstateEnc(t *testing.T) {

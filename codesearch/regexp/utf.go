@@ -28,7 +28,7 @@ func toByteProg(prog *syntax.Prog) error {
 			// TODO: Pick off single-byte case.
 			if lo, hi, fold, ok := oneByteRange(i); ok {
 				i.Op = instByteRange
-				i.Arg = uint32(lo)<<8 | uint32(hi)
+				i.Arg = uint64(lo)<<8 | uint64(hi)
 				if fold {
 					i.Arg |= argFold
 				}
@@ -49,7 +49,7 @@ func toByteProg(prog *syntax.Prog) error {
 				r = rr
 			}
 
-			b.init(prog, uint32(pc), i.Out)
+			b.init(prog, uint64(pc), i.Out)
 			if len(r) == 1 {
 				b.addRange(r[0], r[0], false)
 			} else {
@@ -62,7 +62,7 @@ func toByteProg(prog *syntax.Prog) error {
 			// All runes.
 			// AnyNotNL should exclude \n but the line-at-a-time
 			// execution takes care of that for us.
-			b.init(prog, uint32(pc), i.Out)
+			b.init(prog, uint64(pc), i.Out)
 			b.addRange(0, unicode.MaxRune, false)
 		}
 	}
@@ -134,17 +134,17 @@ func maxRune(n int) rune {
 type cacheKey struct {
 	lo, hi uint8
 	fold   bool
-	next   uint32
+	next   uint64
 }
 
 type runeBuilder struct {
-	begin uint32
-	out   uint32
-	cache map[cacheKey]uint32
+	begin uint64
+	out   uint64
+	cache map[cacheKey]uint64
 	p     *syntax.Prog
 }
 
-func (b *runeBuilder) init(p *syntax.Prog, begin, out uint32) {
+func (b *runeBuilder) init(p *syntax.Prog, begin, out uint64) {
 	// We will rewrite p.Inst[begin] to hold the accumulated
 	// machine.  For now, there is no match.
 	p.Inst[begin].Op = instFail
@@ -152,7 +152,7 @@ func (b *runeBuilder) init(p *syntax.Prog, begin, out uint32) {
 	b.begin = begin
 	b.out = out
 	if b.cache == nil {
-		b.cache = make(map[cacheKey]uint32)
+		b.cache = make(map[cacheKey]uint64)
 	}
 	for k := range b.cache {
 		delete(b.cache, k)
@@ -160,20 +160,20 @@ func (b *runeBuilder) init(p *syntax.Prog, begin, out uint32) {
 	b.p = p
 }
 
-func (b *runeBuilder) uncachedSuffix(lo, hi byte, fold bool, next uint32) uint32 {
+func (b *runeBuilder) uncachedSuffix(lo, hi byte, fold bool, next uint64) uint64 {
 	if next == 0 {
 		next = b.out
 	}
 	pc := len(b.p.Inst)
-	i := syntax.Inst{Op: instByteRange, Arg: uint32(lo)<<8 | uint32(hi), Out: next}
+	i := syntax.Inst{Op: instByteRange, Arg: uint64(lo)<<8 | uint64(hi), Out: next}
 	if fold {
 		i.Arg |= argFold
 	}
 	b.p.Inst = append(b.p.Inst, i)
-	return uint32(pc)
+	return uint64(pc)
 }
 
-func (b *runeBuilder) suffix(lo, hi byte, fold bool, next uint32) uint32 {
+func (b *runeBuilder) suffix(lo, hi byte, fold bool, next uint64) uint64 {
 	if lo < 0x80 || hi > 0xbf {
 		// Not a continuation byte, no need to cache.
 		return b.uncachedSuffix(lo, hi, fold, next)
@@ -189,7 +189,7 @@ func (b *runeBuilder) suffix(lo, hi byte, fold bool, next uint32) uint32 {
 	return pc
 }
 
-func (b *runeBuilder) addBranch(pc uint32) {
+func (b *runeBuilder) addBranch(pc uint64) {
 	// Add pc to the branch at the beginning.
 	i := &b.p.Inst[b.begin]
 	switch i.Op {
@@ -202,7 +202,7 @@ func (b *runeBuilder) addBranch(pc uint32) {
 		i.Arg = pc
 		return
 	case syntax.InstAlt:
-		apc := uint32(len(b.p.Inst))
+		apc := uint64(len(b.p.Inst))
 		b.p.Inst = append(b.p.Inst, syntax.Inst{Op: instAlt, Out: i.Arg, Arg: pc})
 		i = &b.p.Inst[b.begin]
 		i.Arg = apc
@@ -260,7 +260,7 @@ func (b *runeBuilder) addRange(lo, hi rune, fold bool) {
 		panic("codesearch/regexp: bad utf-8 math")
 	}
 
-	pc := uint32(0)
+	pc := uint64(0)
 	for i := n - 1; i >= 0; i-- {
 		pc = b.suffix(ulo[i], uhi[i], false, pc)
 	}

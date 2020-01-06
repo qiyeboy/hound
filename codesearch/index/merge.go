@@ -38,13 +38,13 @@ import (
 
 // An idrange records that the half-open interval [lo, hi) maps to [new, new+hi-lo).
 type idrange struct {
-  lo, hi, new uint32
+  lo, hi, new uint64
 }
 
 type postIndex struct {
-  tri    uint32
-  count  uint32
-  offset uint32
+  tri    uint64
+  count  uint64
+  offset uint64
 }
 
 // Merge creates a new index in the file dst that corresponds to merging
@@ -57,17 +57,17 @@ func Merge(dst, src1, src2 string) {
   paths2 := ix2.Paths()
 
   // Build docid maps.
-  var i1, i2, new uint32
+  var i1, i2, new uint64
   var map1, map2 []idrange
   for _, path := range paths2 {
     // Determine range shadowed by this path.
     old := i1
-    for i1 < uint32(ix1.numName) && ix1.Name(i1) < path {
+    for i1 < uint64(ix1.numName) && ix1.Name(i1) < path {
       i1++
     }
     lo := i1
     limit := path[:len(path)-1] + string(path[len(path)-1]+1)
-    for i1 < uint32(ix1.numName) && ix1.Name(i1) < limit {
+    for i1 < uint64(ix1.numName) && ix1.Name(i1) < limit {
       i1++
     }
     hi := i1
@@ -81,11 +81,11 @@ func Merge(dst, src1, src2 string) {
     // Determine range defined by this path.
     // Because we are iterating over the ix2 paths,
     // there can't be gaps, so it must start at i2.
-    if i2 < uint32(ix2.numName) && ix2.Name(i2) < path {
+    if i2 < uint64(ix2.numName) && ix2.Name(i2) < path {
       panic("merge: inconsistent index")
     }
     lo = i2
-    for i2 < uint32(ix2.numName) && ix2.Name(i2) < limit {
+    for i2 < uint64(ix2.numName) && ix2.Name(i2) < limit {
       i2++
     }
     hi = i2
@@ -95,11 +95,11 @@ func Merge(dst, src1, src2 string) {
     }
   }
 
-  if i1 < uint32(ix1.numName) {
-    map1 = append(map1, idrange{i1, uint32(ix1.numName), new})
-    new += uint32(ix1.numName) - i1
+  if i1 < uint64(ix1.numName) {
+    map1 = append(map1, idrange{i1, uint64(ix1.numName), new})
+    new += uint64(ix1.numName) - i1
   }
-  if i2 < uint32(ix2.numName) {
+  if i2 < uint64(ix2.numName) {
     panic("merge: inconsistent index")
   }
   numName := new
@@ -140,7 +140,7 @@ func Merge(dst, src1, src2 string) {
     if mi1 < len(map1) && map1[mi1].new == new {
       for i := map1[mi1].lo; i < map1[mi1].hi; i++ {
         name := ix1.Name(i)
-        nameIndexFile.writeUint32(ix3.offset() - nameData)
+        nameIndexFile.writeuint64(ix3.offset() - nameData)
         ix3.writeString(name)
         ix3.writeString("\x00")
         new++
@@ -149,7 +149,7 @@ func Merge(dst, src1, src2 string) {
     } else if mi2 < len(map2) && map2[mi2].new == new {
       for i := map2[mi2].lo; i < map2[mi2].hi; i++ {
         name := ix2.Name(i)
-        nameIndexFile.writeUint32(ix3.offset() - nameData)
+        nameIndexFile.writeuint64(ix3.offset() - nameData)
         ix3.writeString(name)
         ix3.writeString("\x00")
         new++
@@ -162,7 +162,7 @@ func Merge(dst, src1, src2 string) {
   if new*4 != nameIndexFile.offset() {
     panic("merge: inconsistent index")
   }
-  nameIndexFile.writeUint32(ix3.offset())
+  nameIndexFile.writeuint64(ix3.offset())
 
   // Merged list of posting lists.
   postData := ix3.offset()
@@ -188,13 +188,13 @@ func Merge(dst, src1, src2 string) {
       r2.nextTrigram()
       w.endTrigram()
     } else {
-      if r1.trigram == ^uint32(0) {
+      if r1.trigram == ^uint64(0) {
         break
       }
       w.trigram(r1.trigram)
       r1.nextId()
       r2.nextId()
-      for r1.fileid < ^uint32(0) || r2.fileid < ^uint32(0) {
+      for r1.fileid < ^uint64(0) || r2.fileid < ^uint64(0) {
         if r1.fileid < r2.fileid {
           w.fileid(r1.fileid)
           r1.nextId()
@@ -219,11 +219,11 @@ func Merge(dst, src1, src2 string) {
   postIndex := ix3.offset()
   copyFile(ix3, w.postIndexFile)
 
-  ix3.writeUint32(pathData)
-  ix3.writeUint32(nameData)
-  ix3.writeUint32(postData)
-  ix3.writeUint32(nameIndex)
-  ix3.writeUint32(postIndex)
+  ix3.writeuint64(pathData)
+  ix3.writeuint64(nameData)
+  ix3.writeuint64(postData)
+  ix3.writeuint64(nameIndex)
+  ix3.writeuint64(postIndex)
   ix3.writeString(trailerMagic)
   ix3.flush()
 
@@ -234,20 +234,20 @@ func Merge(dst, src1, src2 string) {
 type postMapReader struct {
   ix      *Index
   idmap   []idrange
-  triNum  uint32
-  trigram uint32
-  count   uint32
-  offset  uint32
+  triNum  uint64
+  trigram uint64
+  count   uint64
+  offset  uint64
   d       []byte
-  oldid   uint32
-  fileid  uint32
+  oldid   uint64
+  fileid  uint64
   i       int
 }
 
 func (r *postMapReader) init(ix *Index, idmap []idrange) {
   r.ix = ix
   r.idmap = idmap
-  r.trigram = ^uint32(0)
+  r.trigram = ^uint64(0)
   r.load()
 }
 
@@ -257,19 +257,19 @@ func (r *postMapReader) nextTrigram() {
 }
 
 func (r *postMapReader) load() {
-  if r.triNum >= uint32(r.ix.numPost) {
-    r.trigram = ^uint32(0)
+  if r.triNum >= uint64(r.ix.numPost) {
+    r.trigram = ^uint64(0)
     r.count = 0
-    r.fileid = ^uint32(0)
+    r.fileid = ^uint64(0)
     return
   }
   r.trigram, r.count, r.offset = r.ix.listAt(r.triNum * postEntrySize)
   if r.count == 0 {
-    r.fileid = ^uint32(0)
+    r.fileid = ^uint64(0)
     return
   }
   r.d = r.ix.slice(r.ix.postData+r.offset+3, -1)
-  r.oldid = ^uint32(0)
+  r.oldid = ^uint64(0)
   r.i = 0
 }
 
@@ -277,7 +277,7 @@ func (r *postMapReader) nextId() bool {
   for r.count > 0 {
     r.count--
     delta64, n := binary.Uvarint(r.d)
-    delta := uint32(delta64)
+    delta := uint64(delta64)
     if n <= 0 || delta == 0 {
       corrupt(r.ix.data.f)
     }
@@ -297,7 +297,7 @@ func (r *postMapReader) nextId() bool {
     return true
   }
 
-  r.fileid = ^uint32(0)
+  r.fileid = ^uint64(0)
   return false
 }
 
@@ -305,10 +305,10 @@ type postDataWriter struct {
   out           *bufWriter
   postIndexFile *bufWriter
   buf           [10]byte
-  base          uint32
-  count, offset uint32
-  last          uint32
-  t             uint32
+  base          uint64
+  count, offset uint64
+  last          uint64
+  t             uint64
 }
 
 func (w *postDataWriter) init(out *bufWriter) {
@@ -317,14 +317,14 @@ func (w *postDataWriter) init(out *bufWriter) {
   w.base = out.offset()
 }
 
-func (w *postDataWriter) trigram(t uint32) {
+func (w *postDataWriter) trigram(t uint64) {
   w.offset = w.out.offset()
   w.count = 0
   w.t = t
-  w.last = ^uint32(0)
+  w.last = ^uint64(0)
 }
 
-func (w *postDataWriter) fileid(id uint32) {
+func (w *postDataWriter) fileid(id uint64) {
   if w.count == 0 {
     w.out.writeTrigram(w.t)
   }
@@ -339,6 +339,6 @@ func (w *postDataWriter) endTrigram() {
   }
   w.out.writeUvarint(0)
   w.postIndexFile.writeTrigram(w.t)
-  w.postIndexFile.writeUint32(w.count)
-  w.postIndexFile.writeUint32(w.offset - w.base)
+  w.postIndexFile.writeuint64(w.count)
+  w.postIndexFile.writeuint64(w.offset - w.base)
 }

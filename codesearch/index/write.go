@@ -43,7 +43,7 @@ type IndexWriter struct {
 	paths []string
 
 	nameData   *bufWriter // temp file holding list of names
-	nameLen    uint32     // number of bytes written to nameData
+	nameLen    uint64     // number of bytes written to nameData
 	nameIndex  *bufWriter // temp file holding name index
 	numName    int        // number of names written
 	totalBytes int64
@@ -75,15 +75,15 @@ func Create(file string) *IndexWriter {
 // A postEntry is an in-memory (trigram, file#) pair.
 type postEntry uint64
 
-func (p postEntry) trigram() uint32 {
-	return uint32(p >> 32)
+func (p postEntry) trigram() uint64 {
+	return uint64(p >> 32)
 }
 
-func (p postEntry) fileid() uint32 {
-	return uint32(p)
+func (p postEntry) fileid() uint64 {
+	return uint64(p)
 }
 
-func makePostEntry(trigram, fileid uint32) postEntry {
+func makePostEntry(trigram, fileid uint64) postEntry {
 	return postEntry(trigram)<<32 | postEntry(fileid)
 }
 
@@ -126,7 +126,7 @@ func (ix *IndexWriter) Add(name string, f io.Reader) string {
 		c          = byte(0)
 		i          = 0
 		buf        = ix.inbuf[:0]
-		tv         = uint32(0)
+		tv         = uint64(0)
 		n          = int64(0)
 		linelen    = 0
 		numLines   = 0
@@ -154,7 +154,7 @@ func (ix *IndexWriter) Add(name string, f io.Reader) string {
 		}
 		c = buf[i]
 		i++
-		tv |= uint32(c)
+		tv |= uint64(c)
 		if n++; n >= 3 {
 			ix.trigram.Add(tv)
 		}
@@ -223,7 +223,7 @@ func (ix *IndexWriter) Add(name string, f io.Reader) string {
 func (ix *IndexWriter) Flush() {
 	ix.addName("")
 
-	var off [5]uint32
+	var off [5]uint64
 	ix.main.writeString(magic)
 	off[0] = ix.main.offset()
 	for _, p := range ix.paths {
@@ -240,7 +240,7 @@ func (ix *IndexWriter) Flush() {
 	off[4] = ix.main.offset()
 	copyFile(ix.main, ix.postIndex)
 	for _, v := range off {
-		ix.main.writeUint32(v)
+		ix.main.writeuint64(v)
 	}
 	ix.main.writeString(trailerMagic)
 
@@ -274,17 +274,17 @@ func copyFile(dst, src *bufWriter) {
 
 // addName adds the file with the given name to the index.
 // It returns the assigned file ID number.
-func (ix *IndexWriter) addName(name string) uint32 {
+func (ix *IndexWriter) addName(name string) uint64 {
 	if strings.Contains(name, "\x00") {
 		log.Fatalf("%q: file has NUL byte in name", name)
 	}
 
-	ix.nameIndex.writeUint32(ix.nameData.offset())
+	ix.nameIndex.writeuint64(ix.nameData.offset())
 	ix.nameData.writeString(name)
 	ix.nameData.writeByte(0)
 	id := ix.numName
 	ix.numName++
-	return uint32(id)
+	return uint64(id)
 }
 
 // flushPost writes ix.post to a new temporary file and
@@ -340,8 +340,8 @@ func (ix *IndexWriter) mergePost(out *bufWriter) {
 		ix.buf[2] = byte(trigram)
 
 		// posting list
-		fileid := ^uint32(0)
-		nfile := uint32(0)
+		fileid := ^uint64(0)
+		nfile := uint64(0)
 		out.write(ix.buf[:3])
 		for ; e.trigram() == trigram && trigram != 1<<24-1; e = h.next() {
 			out.writeUvarint(e.fileid() - fileid)
@@ -352,8 +352,8 @@ func (ix *IndexWriter) mergePost(out *bufWriter) {
 
 		// index entry
 		ix.postIndex.write(ix.buf[:3])
-		ix.postIndex.writeUint32(nfile)
-		ix.postIndex.writeUint32(offset)
+		ix.postIndex.writeuint64(nfile)
+		ix.postIndex.writeuint64(offset)
 
 		if trigram == 1<<24-1 {
 			break
@@ -554,13 +554,13 @@ func (b *bufWriter) writeString(s string) {
 }
 
 // offset returns the current write offset.
-func (b *bufWriter) offset() uint32 {
+func (b *bufWriter) offset() uint64 {
 	off, _ := b.file.Seek(0, 1)
 	off += int64(len(b.buf))
-	if int64(uint32(off)) != off {
+	if int64(uint64(off)) != off {
 		log.Fatalf("index is larger than 4GB")
 	}
-	return uint32(off)
+	return uint64(off)
 }
 
 func (b *bufWriter) flush() {
@@ -582,21 +582,21 @@ func (b *bufWriter) finish() *os.File {
 	return f
 }
 
-func (b *bufWriter) writeTrigram(t uint32) {
+func (b *bufWriter) writeTrigram(t uint64) {
 	if cap(b.buf)-len(b.buf) < 3 {
 		b.flush()
 	}
 	b.buf = append(b.buf, byte(t>>16), byte(t>>8), byte(t))
 }
 
-func (b *bufWriter) writeUint32(x uint32) {
+func (b *bufWriter) writeuint64(x uint64) {
 	if cap(b.buf)-len(b.buf) < 4 {
 		b.flush()
 	}
 	b.buf = append(b.buf, byte(x>>24), byte(x>>16), byte(x>>8), byte(x))
 }
 
-func (b *bufWriter) writeUvarint(x uint32) {
+func (b *bufWriter) writeUvarint(x uint64) {
 	if cap(b.buf)-len(b.buf) < 5 {
 		b.flush()
 	}
@@ -616,7 +616,7 @@ func (b *bufWriter) writeUvarint(x uint32) {
 
 // validUTF8 reports whether the byte pair can appear in a
 // valid sequence of UTF-8-encoded code points.
-func validUTF8(c1, c2 uint32) bool {
+func validUTF8(c1, c2 uint64) bool {
 	switch {
 	case c1 < 0x80:
 		// 1-byte, must be followed by 1-byte or first of multi-byte

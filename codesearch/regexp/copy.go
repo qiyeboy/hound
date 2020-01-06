@@ -175,7 +175,7 @@ func dumpProg(b *bytes.Buffer, p *syntax.Prog) {
 	}
 }
 
-func u32(i uint32) string {
+func u32(i uint64) string {
 	return strconv.FormatUint(uint64(i), 10)
 }
 
