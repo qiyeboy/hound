@@ -1,7 +1,7 @@
 git clone /hound/.git
 cd hound
 
-go mod init
+go mod init  
 go mod tidy
 
 vim config.JSON
