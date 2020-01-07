@@ -2,7 +2,7 @@ git clone https://github.com/conan25216/hound.git
 
 cd hound
 
-go mod init
+go mod init  
 go mod tidy
 
 vim config.json
